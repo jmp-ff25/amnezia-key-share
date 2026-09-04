@@ -14,7 +14,6 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from app.config import get_settings
 from app.db.session import engine
 from app.routes import admin_router, public_router
-from app.routes.helpers import templates
 
 settings = get_settings()
 
@@ -45,10 +44,7 @@ app.include_router(public_router)
 @app.exception_handler(StarletteHTTPException)
 async def http_error(request: FastAPIRequest, exc: StarletteHTTPException) -> Response:
     if exc.status_code == 404:
-        return templates.TemplateResponse(
-            request,
-            "errors/404.html",
-            {"request": request},
+        return Response(
             status_code=404,
             headers={"Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow"},
         )

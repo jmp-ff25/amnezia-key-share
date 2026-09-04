@@ -34,14 +34,13 @@ def test_csrf_rejected(client):
     )
 
 
-def test_unknown_paths_use_neutral_html_404(client):
+def test_unknown_paths_use_empty_404(client):
     for path in ("/access/", "/admin", "/definitely-missing"):
         response = client.get(path)
         assert response.status_code == 404
-        assert "Страница не найдена" in response.text
+        assert response.content == b""
         assert response.headers["cache-control"] == "no-store"
         assert response.headers["x-robots-tag"] == "noindex, nofollow"
-        assert response.headers["content-type"].startswith("text/html")
 
 
 def create_entry(admin):

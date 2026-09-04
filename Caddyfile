@@ -3,6 +3,11 @@
 }
 
 {$CADDY_DOMAIN} {
+	# Silently terminate probes for the conventional admin path. The real
+	# administrative prefix is configured separately through ADMIN_PATH.
+	@legacy_admin path /admin /admin/*
+	abort @legacy_admin
+
 	tls {
 		issuer acme https://acme-v02.api.letsencrypt.org/directory {
 			profile shortlived

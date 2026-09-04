@@ -20,13 +20,7 @@ def public_access(request: Request, token: str, db: Session = Depends(get_db)) -
     if TOKEN_RE.fullmatch(token):
         entry = AccessEntryRepository(db).by_token_hash(AccessEntryService.token_hash(token))
     if entry is None or not entry.is_active:
-        return templates.TemplateResponse(
-            request,
-            "public/not_found.html",
-            {"request": request},
-            status_code=404,
-            headers=NO_STORE,
-        )
+        return Response(status_code=404, headers=NO_STORE)
     return templates.TemplateResponse(
         request,
         "public/access.html",
