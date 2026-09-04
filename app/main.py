@@ -4,14 +4,17 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi import Request as FastAPIRequest
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.config import get_settings
 from app.db.session import engine
 from app.routes import admin_router, public_router
+from app.routes.helpers import templates
 
 settings = get_settings()
 
@@ -37,6 +40,19 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 app.include_router(admin_router)
 app.include_router(public_router)
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_error(request: FastAPIRequest, exc: StarletteHTTPException) -> Response:
+    if exc.status_code == 404:
+        return templates.TemplateResponse(
+            request,
+            "errors/404.html",
+            {"request": request},
+            status_code=404,
+            headers={"Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow"},
+        )
+    return JSONResponse({"detail": "Request failed"}, status_code=exc.status_code)
 
 
 @app.get("/health", include_in_schema=False)

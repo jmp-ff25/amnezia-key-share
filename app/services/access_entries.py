@@ -1,12 +1,20 @@
 import hashlib
 import secrets
+from dataclasses import dataclass
+from datetime import UTC, datetime
 
-from app.models import AccessEntry
+from app.models import AccessEntry, AccessKey
 from app.repositories import AccessEntryRepository
 
 
 class InvalidVpnKeyError(ValueError):
     pass
+
+
+@dataclass(frozen=True, slots=True)
+class KeyInput:
+    display_name: str
+    vpn_key: str
 
 
 class AccessEntryService:
@@ -28,23 +36,45 @@ class AccessEntryService:
             raise InvalidVpnKeyError("Ключ должен быть корректным URI, начинающимся с vpn://")
         return clean
 
-    def create(self, display_name: str, description: str, vpn_key: str) -> tuple[AccessEntry, str]:
+    def validate_keys(self, keys: list[KeyInput]) -> list[AccessKey]:
+        if not keys:
+            raise InvalidVpnKeyError("Добавьте хотя бы один VPN-ключ")
+        if len(keys) > 20:
+            raise InvalidVpnKeyError("В одной группе может быть не более 20 ключей")
+        result: list[AccessKey] = []
+        for index, key in enumerate(keys):
+            name = key.display_name.strip()
+            if not name:
+                raise InvalidVpnKeyError(f"Укажите название для ключа №{index + 1}")
+            result.append(
+                AccessKey(
+                    display_name=name[:160],
+                    vpn_key=self.validate_key(key.vpn_key),
+                    sort_order=index,
+                )
+            )
+        return result
+
+    def create(
+        self, display_name: str, description: str, keys: list[KeyInput]
+    ) -> tuple[AccessEntry, str]:
         token = self.generate_token()
         entry = AccessEntry(
             display_name=display_name.strip(),
             description=description.strip() or None,
-            vpn_key=self.validate_key(vpn_key),
             public_token_hash=self.token_hash(token),
             public_token=token,
+            keys=self.validate_keys(keys),
         )
         return self.repository.save(entry), token
 
     def update(
-        self, entry: AccessEntry, display_name: str, description: str, vpn_key: str
+        self, entry: AccessEntry, display_name: str, description: str, keys: list[KeyInput]
     ) -> AccessEntry:
         entry.display_name = display_name.strip()
         entry.description = description.strip() or None
-        entry.vpn_key = self.validate_key(vpn_key)
+        entry.keys = self.validate_keys(keys)
+        entry.updated_at = datetime.now(UTC)
         return self.repository.save(entry)
 
     def regenerate(self, entry: AccessEntry) -> str:

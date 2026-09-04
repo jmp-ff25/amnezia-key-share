@@ -1,5 +1,5 @@
 from sqlalchemy import func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.models import AccessEntry
 
@@ -9,7 +9,11 @@ class AccessEntryRepository:
         self.db = db
 
     def list(self, query: str = "") -> list[AccessEntry]:
-        stmt = select(AccessEntry).order_by(AccessEntry.updated_at.desc())
+        stmt = (
+            select(AccessEntry)
+            .options(selectinload(AccessEntry.keys))
+            .order_by(AccessEntry.updated_at.desc())
+        )
         if query:
             pattern = f"%{query.strip()}%"
             stmt = stmt.where(
@@ -28,11 +32,17 @@ class AccessEntryRepository:
         return total, active
 
     def get(self, entry_id: int) -> AccessEntry | None:
-        return self.db.get(AccessEntry, entry_id)
+        return self.db.scalar(
+            select(AccessEntry)
+            .options(selectinload(AccessEntry.keys))
+            .where(AccessEntry.id == entry_id)
+        )
 
     def by_token_hash(self, token_hash: str) -> AccessEntry | None:
         return self.db.scalar(
-            select(AccessEntry).where(AccessEntry.public_token_hash == token_hash)
+            select(AccessEntry)
+            .options(selectinload(AccessEntry.keys))
+            .where(AccessEntry.public_token_hash == token_hash)
         )
 
     def save(self, entry: AccessEntry) -> AccessEntry:

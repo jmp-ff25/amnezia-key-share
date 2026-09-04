@@ -4,6 +4,7 @@ os.environ.update(
     {
         "APP_SECRET_KEY": "test-secret-key-that-is-at-least-32-bytes",
         "ADMIN_USERNAME": "admin",
+        "ADMIN_PATH": "/control-test",
         "ADMIN_PASSWORD_HASH": "$argon2id$v=19$m=65536,t=3,p=4$F96R/hhDS8ox+elpalLE8Q$rPymbemA+YOxdTgYsaz7BTDF81xvm1Ih5hjN8hy0Hn4",
         "DATABASE_URL": "sqlite:///./test-keyport.db",
         "BASE_URL": "http://testserver",
@@ -34,7 +35,7 @@ def client():
         yield value
 
 
-def csrf(client: TestClient, path: str = "/admin/login") -> str:
+def csrf(client: TestClient, path: str = "/control-test/login") -> str:
     import re
 
     response = client.get(path)
@@ -45,7 +46,7 @@ def csrf(client: TestClient, path: str = "/admin/login") -> str:
 def admin(client):
     token = csrf(client)
     response = client.post(
-        "/admin/login",
+        "/control-test/login",
         data={"username": "admin", "password": "correct horse battery staple", "csrf_token": token},
         follow_redirects=False,
     )

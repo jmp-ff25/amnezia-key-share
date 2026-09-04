@@ -14,9 +14,20 @@ from app.models import AccessEntry
 from app.repositories import AccessEntryRepository
 from app.routes.helpers import context, templates
 from app.services import AccessEntryService
-from app.services.access_entries import InvalidVpnKeyError
+from app.services.access_entries import InvalidVpnKeyError, KeyInput
 
-router = APIRouter(prefix="/admin", include_in_schema=False)
+settings = get_settings()
+router = APIRouter(prefix=settings.admin_path, include_in_schema=False)
+
+
+def admin_url(suffix: str = "") -> str:
+    return f"{settings.admin_path}{suffix}"
+
+
+def key_inputs(names: list[str], values: list[str]) -> list[KeyInput]:
+    if len(names) != len(values):
+        raise InvalidVpnKeyError("Некорректный набор ключей")
+    return [KeyInput(name, value) for name, value in zip(names, values, strict=True)]
 
 
 def redirect(path: str, message: str | None = None) -> RedirectResponse:
@@ -31,7 +42,7 @@ def client_key(request: Request) -> str:
 @router.get("/login")
 def login_page(request: Request, settings: Settings = Depends(get_settings)) -> Response:
     if require_admin(request):
-        return redirect("/admin")
+        return redirect(admin_url())
     return templates.TemplateResponse(
         request,
         "admin/login.html",
@@ -70,19 +81,19 @@ def login(
     request.session.clear()
     request.session["authenticated"] = True
     request.session["csrf"] = secrets.token_urlsafe(32)
-    return redirect("/admin")
+    return redirect(admin_url())
 
 
 @router.post("/logout")
 def logout(request: Request, csrf_token: str = Form(...)) -> Response:
     validate_csrf(request, csrf_token)
     request.session.clear()
-    return redirect("/admin/login")
+    return redirect(admin_url("/login"))
 
 
 def admin_guard(request: Request) -> Response | None:
     if not require_admin(request):
-        return redirect("/admin/login")
+        return redirect(admin_url("/login"))
     return None
 
 
@@ -115,7 +126,14 @@ def new_entry(request: Request) -> Response:
     if guard := admin_guard(request):
         return guard
     return templates.TemplateResponse(
-        request, "admin/form.html", context(request, title="Новый доступ", entry=None)
+        request,
+        "admin/form.html",
+        context(
+            request,
+            title="Новый доступ",
+            entry=None,
+            key_rows=[{"display_name": "Основной ключ", "vpn_key": ""}],
+        ),
     )
 
 
@@ -124,7 +142,8 @@ def create_entry(
     request: Request,
     display_name: str = Form(...),
     description: str = Form(""),
-    vpn_key: str = Form(...),
+    key_name: list[str] = Form(...),
+    vpn_key: list[str] = Form(...),
     csrf_token: str = Form(...),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
@@ -134,7 +153,7 @@ def create_entry(
     validate_csrf(request, csrf_token)
     try:
         entry, token = AccessEntryService(AccessEntryRepository(db)).create(
-            display_name, description, vpn_key
+            display_name, description, key_inputs(key_name, vpn_key)
         )
     except InvalidVpnKeyError as exc:
         return templates.TemplateResponse(
@@ -148,13 +167,18 @@ def create_entry(
                 values={
                     "display_name": display_name,
                     "description": description,
-                    "vpn_key": vpn_key,
                 },
+                key_rows=[
+                    {"display_name": name, "vpn_key": value}
+                    for name, value in zip(key_name, vpn_key, strict=False)
+                ],
             ),
             status_code=422,
         )
     request.session["fresh_url"] = f"{settings.base_url}/access/{token}"
-    return redirect(f"/admin/entries/{entry.id}/edit", "Доступ создан. Сохраните публичную ссылку.")
+    return redirect(
+        admin_url(f"/entries/{entry.id}/edit"), "Доступ создан. Сохраните публичную ссылку."
+    )
 
 
 def get_entry_or_404(db: Session, entry_id: int) -> AccessEntry:
@@ -182,6 +206,7 @@ def edit_entry(request: Request, entry_id: int, db: Session = Depends(get_db)) -
             entry=entry,
             fresh_url=fresh_url,
             public_url=public_url,
+            key_rows=entry.keys,
         ),
     )
 
@@ -192,7 +217,8 @@ def update_entry(
     entry_id: int,
     display_name: str = Form(...),
     description: str = Form(""),
-    vpn_key: str = Form(...),
+    key_name: list[str] = Form(...),
+    vpn_key: list[str] = Form(...),
     csrf_token: str = Form(...),
     db: Session = Depends(get_db),
 ) -> Response:
@@ -202,16 +228,25 @@ def update_entry(
     entry = get_entry_or_404(db, entry_id)
     try:
         AccessEntryService(AccessEntryRepository(db)).update(
-            entry, display_name, description, vpn_key
+            entry, display_name, description, key_inputs(key_name, vpn_key)
         )
     except InvalidVpnKeyError as exc:
         return templates.TemplateResponse(
             request,
             "admin/form.html",
-            context(request, title="Редактирование", entry=entry, error=str(exc)),
+            context(
+                request,
+                title="Редактирование",
+                entry=entry,
+                error=str(exc),
+                key_rows=[
+                    {"display_name": name, "vpn_key": value}
+                    for name, value in zip(key_name, vpn_key, strict=False)
+                ],
+            ),
             status_code=422,
         )
-    return redirect(f"/admin/entries/{entry_id}/edit", "Изменения сохранены.")
+    return redirect(admin_url(f"/entries/{entry_id}/edit"), "Изменения сохранены.")
 
 
 @router.post("/entries/{entry_id}/toggle")
@@ -223,9 +258,9 @@ def toggle(
     validate_csrf(request, csrf_token)
     entry = get_entry_or_404(db, entry_id)
     if entry.public_token_hash is None:
-        return redirect("/admin/entries", "Отозванную ссылку сначала нужно регенерировать.")
+        return redirect(admin_url("/entries"), "Отозванную ссылку сначала нужно регенерировать.")
     AccessEntryService(AccessEntryRepository(db)).set_active(entry, not entry.is_active)
-    return redirect("/admin/entries", "Статус ссылки изменён.")
+    return redirect(admin_url("/entries"), "Статус ссылки изменён.")
 
 
 @router.post("/entries/{entry_id}/revoke")
@@ -236,7 +271,7 @@ def revoke(
         return guard
     validate_csrf(request, csrf_token)
     AccessEntryService(AccessEntryRepository(db)).revoke(get_entry_or_404(db, entry_id))
-    return redirect("/admin/entries", "Ссылка безвозвратно отозвана.")
+    return redirect(admin_url("/entries"), "Ссылка безвозвратно отозвана.")
 
 
 @router.post("/entries/{entry_id}/regenerate")
@@ -253,7 +288,8 @@ def regenerate(
     token = AccessEntryService(AccessEntryRepository(db)).regenerate(get_entry_or_404(db, entry_id))
     request.session["fresh_url"] = f"{settings.base_url}/access/{token}"
     return redirect(
-        f"/admin/entries/{entry_id}/edit", "Создана новая ссылка; старая больше не работает."
+        admin_url(f"/entries/{entry_id}/edit"),
+        "Создана новая ссылка; старая больше не работает.",
     )
 
 
@@ -266,4 +302,4 @@ def delete(
     validate_csrf(request, csrf_token)
     repo = AccessEntryRepository(db)
     repo.delete(get_entry_or_404(db, entry_id))
-    return redirect("/admin/entries", "Запись удалена.")
+    return redirect(admin_url("/entries"), "Запись удалена.")
