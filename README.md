@@ -72,7 +72,7 @@ cd keyport
    uv run python -m app.cli generate-admin-path
    ```
 
-   Argon2id hash в `ADMIN_PASSWORD_HASH` обязательно заключите в одинарные кавычки, поскольку Docker Compose иначе интерпретирует символы `$`:
+   При Docker-развёртывании обрамите Argon2id hash в `ADMIN_PASSWORD_HASH` обычными одинарными кавычками `'...'`: Compose оставит значение и символы `$` неизменными. Не используйте обратные кавычки `` `...` `` — это Markdown-разметка, а не кавычки для `.env`.
 
    ```env
    ADMIN_PASSWORD_HASH='$argon2id$v=19$m=65536,t=3,p=4$...'
