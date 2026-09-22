@@ -14,28 +14,51 @@ FastAPI не публикуется на хосте. Caddy — единстве�
 
 ## Локальный запуск
 
-Требуются Python 3.12+ и `uv`.
+Локальный запуск требует `uv`. Установите его один раз от обычного пользователя (без `sudo`):
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh && export PATH="$HOME/.local/bin:$PATH" && uv --version
+```
+
+`uv` автоматически загрузит подходящий Python: проект требует Python 3.12+, отдельно
+устанавливать его через системный пакетный менеджер не нужно.
 
 ```bash
 cp .env.example .env
 uv sync
 uv run python -m app.cli hash-password
-# вставьте hash и development-настройки в .env
+uv run python -m app.cli generate-admin-path
+# вставьте hash и сгенерированный ADMIN_PATH в .env
 uv run alembic upgrade head
 uv run uvicorn app.main:app --reload
 ```
 
 Откройте `<BASE_URL><ADMIN_PATH>/login`. Для локальной среды задайте `ENVIRONMENT=development`, `BASE_URL=http://localhost:8000`, `TRUSTED_HOSTS=localhost,127.0.0.1`.
 
-## Развёртывание на Ubuntu VPS
+## Развёртывание в Docker на Linux VPS
 
-1. Установите Docker Engine с Compose plugin и разрешите входящие TCP 80/443 в firewall.
+`uv` используется для локальной разработки и для безопасной генерации значений в `.env`.
+Docker Compose нужен для production: он запускает приложение с отдельным SQLite volume,
+Caddy с TLS и приватной сетью между Caddy и FastAPI. Не запускайте `uv run alembic` с
+production `DATABASE_URL=sqlite:////data/keyport.db`: путь `/data` существует только
+в контейнере и миграции выполняются автоматически при запуске `app`.
+
+1. Установите Docker Engine с Compose plugin, `curl` и разрешите входящие TCP 80/443 в firewall.
 2. Создайте DNS `A`/`AAAA` запись `keys.example.com`, направленную на VPS. Дождитесь распространения DNS.
-3. Клонируйте репозиторий, выполните `cp .env.example .env` и задайте уникальные значения. Секрет можно получить `openssl rand -hex 32`.
-4. Сгенерируйте пароль без сохранения plaintext:
+3. Клонируйте репозиторий, установите `uv`, затем создайте production-конфигурацию:
 
    ```bash
-   docker-compose run --rm --no-deps app python -m app.cli create-admin
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   export PATH="$HOME/.local/bin:$PATH"
+   cp .env.production.example .env
+   uv sync
+   openssl rand -hex 32
+   ```
+
+   Вставьте результат `openssl` в `APP_SECRET_KEY`, затем сгенерируйте пароль без его сохранения в plaintext:
+
+   ```bash
+   uv run python -m app.cli hash-password
    ```
 
    Вставьте выданный Argon2id hash в `ADMIN_PASSWORD_HASH`, обязательно заключив его в одинарные кавычки, чтобы Docker Compose не интерпретировал символы `$`:
@@ -44,10 +67,10 @@ uv run uvicorn app.main:app --reload
    ADMIN_PASSWORD_HASH='$argon2id$v=19$m=65536,t=3,p=4$...'
    ```
 
-   Сгенерируйте непредсказуемый путь административной панели:
+   Сгенерируйте непредсказуемый путь административной панели через `uv`:
 
    ```bash
-   docker-compose run --rm --no-deps app python -m app.cli generate-admin-path
+   uv run python -m app.cli generate-admin-path
    ```
 
    Скопируйте результат целиком, включая начальный `/`:
@@ -58,9 +81,15 @@ uv run uvicorn app.main:app --reload
 
    Скрытый путь уменьшает автоматическое сканирование страницы входа, но не заменяет пароль, rate limiting, CSRF и session security. Не публикуйте его вместе с публичными ссылками.
 
-5. Укажите один домен или публичный IP одинаково в `BASE_URL`, `TRUSTED_HOSTS` и `CADDY_DOMAIN`.
-6. Проверьте Caddyfile и Compose до запуска: `docker-compose config --quiet` и `docker-compose run --rm --no-deps caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile`.
-7. Запустите `docker-compose up -d --build`. Caddy автоматически получает и обновляет сертификат. Проверьте `docker-compose ps`, `docker-compose logs caddy`, `docker-compose logs app` и `<BASE_URL>/health`.
+5. Укажите один домен или публичный IP одинаково в `BASE_URL`, `TRUSTED_HOSTS` и `CADDY_DOMAIN`. Если домена нет, используйте публичный статический IPv4 VPS. `BASE_URL` содержит `https://`; в остальных двух переменных укажите только адрес, без схемы, пути и порта. Получить внешний IPv4 и сразу вывести три готовые строки можно командой:
+
+   ```bash
+   SERVER_IP="$(curl -4fsS https://api.ipify.org)" && printf 'BASE_URL=https://%s\nTRUSTED_HOSTS=%s\nCADDY_DOMAIN=%s\n' "$SERVER_IP" "$SERVER_IP" "$SERVER_IP"
+   ```
+
+   Скопируйте вывод в `.env`. Результат должен быть статическим публичным IP именно этого VPS.
+6. Проверьте Caddyfile и Compose до запуска: `docker compose config --quiet` и `docker compose run --rm --no-deps caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile`.
+7. Запустите `docker compose up -d --build`. Caddy автоматически получает и обновляет сертификат. Проверьте `docker compose ps`, `docker compose logs caddy`, `docker compose logs app` и `<BASE_URL>/health`.
 
 Не публикуйте порт 8000 и не добавляйте его в `ports` сервиса `app`.
 
@@ -122,8 +151,8 @@ CADDY_DOMAIN=203.0.113.10
 SQLite использует Docker volume `keyport_data`. Делайте согласованную копию через SQLite backup API:
 
 ```bash
-docker-compose exec app python -c "import sqlite3; s=sqlite3.connect('/data/keyport.db'); d=sqlite3.connect('/data/keyport.backup.db'); s.backup(d); d.close(); s.close()"
-docker-compose cp app:/data/keyport.backup.db ./keyport-$(date +%F).db
+docker compose exec app python -c "import sqlite3; s=sqlite3.connect('/data/keyport.db'); d=sqlite3.connect('/data/keyport.backup.db'); s.backup(d); d.close(); s.close()"
+docker compose cp app:/data/keyport.backup.db ./keyport-$(date +%F).db
 ```
 
 Храните backup как секрет. Для восстановления остановите `app`, сохраните текущую БД, скопируйте проверенный backup в `/data/keyport.db`, затем запустите сервис и проверьте health/login. Не восстанавливайте поверх работающего процесса.
@@ -134,9 +163,9 @@ docker-compose cp app:/data/keyport.backup.db ./keyport-$(date +%F).db
 
 ```bash
 git pull --ff-only
-docker-compose build --pull
-docker-compose up -d
-docker-compose ps
+docker compose build --pull
+docker compose up -d
+docker compose ps
 ```
 
 Контейнер выполняет `alembic upgrade head` перед стартом. Для отката приложения используйте прежний image/commit; downgrade схемы выполняйте только после проверки совместимости и с backup.
@@ -147,7 +176,7 @@ docker-compose ps
 uv run pytest
 uv run ruff check .
 uv run mypy app
-docker-compose config --quiet
+docker compose config --quiet
 ```
 
 ## Security considerations
