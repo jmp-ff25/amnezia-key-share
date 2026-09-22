@@ -12,86 +12,110 @@ Browser → Caddy (TLS, headers) → FastAPI/Jinja2 → SQLAlchemy → SQLite vo
 
 FastAPI не публикуется на хосте. Caddy — единственная внешняя точка входа. Подробнее: [docs/architecture.md](docs/architecture.md).
 
-## Локальный запуск
+## Подготовка репозитория
 
-Локальный запуск требует `uv`. Установите его один раз от обычного пользователя (без `sudo`):
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh && export PATH="$HOME/.local/bin:$PATH" && uv --version
-```
-
-`uv` автоматически загрузит подходящий Python: проект требует Python 3.12+, отдельно
-устанавливать его через системный пакетный менеджер не нужно.
+Выполняйте команды ниже из каталога проекта. При новом клонировании:
 
 ```bash
-cp .env.example .env
-uv sync
-uv run python -m app.cli hash-password
-uv run python -m app.cli generate-admin-path
-# вставьте hash и сгенерированный ADMIN_PATH в .env
-uv run alembic upgrade head
-uv run uvicorn app.main:app --reload
+git clone https://github.com/jmp-ff25/amnezia-key-share.git keyport
+cd keyport
 ```
 
-Откройте `<BASE_URL><ADMIN_PATH>/login`. Для локальной среды задайте `ENVIRONMENT=development`, `BASE_URL=http://localhost:8000`, `TRUSTED_HOSTS=localhost,127.0.0.1`.
+## Настройка `.env`
 
-## Развёртывание в Docker на Linux VPS
+Этот блок выполняется до локального запуска или Docker-развёртывания.
 
-`uv` используется для локальной разработки и для безопасной генерации значений в `.env`.
-Docker Compose нужен для production: он запускает приложение с отдельным SQLite volume,
-Caddy с TLS и приватной сетью между Caddy и FastAPI. Не запускайте `uv run alembic` с
-production `DATABASE_URL=sqlite:////data/keyport.db`: путь `/data` существует только
-в контейнере и миграции выполняются автоматически при запуске `app`.
-
-1. Установите Docker Engine с Compose plugin, `curl` и разрешите входящие TCP 80/443 в firewall.
-2. Создайте DNS `A`/`AAAA` запись `keys.example.com`, направленную на VPS. Дождитесь распространения DNS.
-3. Клонируйте репозиторий, установите `uv`, затем создайте production-конфигурацию:
+1. Установите `uv` один раз от обычного пользователя, без `sudo`:
 
    ```bash
-   curl -LsSf https://astral.sh/uv/install.sh | sh
-   export PATH="$HOME/.local/bin:$PATH"
+   curl -LsSf https://astral.sh/uv/install.sh | sh && export PATH="$HOME/.local/bin:$PATH" && uv --version
+   ```
+
+   `uv` автоматически загрузит подходящий Python: проект требует Python 3.12+, отдельно устанавливать его через системный пакетный менеджер не нужно.
+
+2. Выберите один шаблон и создайте `.env`:
+
+   ```bash
+   # Локальный запуск
+   cp .env.example .env
+
+   # Или Docker-развёртывание на VPS
    cp .env.production.example .env
-   uv sync
-   openssl rand -hex 32
    ```
 
-   Вставьте результат `openssl` в `APP_SECRET_KEY`, затем сгенерируйте пароль без его сохранения в plaintext:
-
-   ```bash
-   uv run python -m app.cli hash-password
-   ```
-
-   Вставьте выданный Argon2id hash в `ADMIN_PASSWORD_HASH`, обязательно заключив его в одинарные кавычки, чтобы Docker Compose не интерпретировал символы `$`:
+3. Для Docker-развёртывания сразу заполните публичный адрес в `.env`. Если есть домен, укажите его во всех трёх переменных:
 
    ```env
-   ADMIN_PASSWORD_HASH='$argon2id$v=19$m=65536,t=3,p=4$...'
+   BASE_URL=https://keys.example.com
+   TRUSTED_HOSTS=keys.example.com
+   CADDY_DOMAIN=keys.example.com
    ```
 
-   Сгенерируйте непредсказуемый путь административной панели через `uv`:
-
-   ```bash
-   uv run python -m app.cli generate-admin-path
-   ```
-
-   Скопируйте результат целиком, включая начальный `/`:
-
-   ```env
-   ADMIN_PATH=/control-long-random-value
-   ```
-
-   Скрытый путь уменьшает автоматическое сканирование страницы входа, но не заменяет пароль, rate limiting, CSRF и session security. Не публикуйте его вместе с публичными ссылками.
-
-5. Укажите один домен или публичный IP одинаково в `BASE_URL`, `TRUSTED_HOSTS` и `CADDY_DOMAIN`. Если домена нет, используйте публичный статический IPv4 VPS. `BASE_URL` содержит `https://`; в остальных двух переменных укажите только адрес, без схемы, пути и порта. Получить внешний IPv4 и сразу вывести три готовые строки можно командой:
+   Если домена нет, выполните на самом VPS команду: она получит публичный IPv4 и выведет три готовые строки.
 
    ```bash
    SERVER_IP="$(curl -4fsS https://api.ipify.org)" && printf 'BASE_URL=https://%s\nTRUSTED_HOSTS=%s\nCADDY_DOMAIN=%s\n' "$SERVER_IP" "$SERVER_IP" "$SERVER_IP"
    ```
 
-   Скопируйте вывод в `.env`. Результат должен быть статическим публичным IP именно этого VPS.
-6. Проверьте Caddyfile и Compose до запуска: `docker compose config --quiet` и `docker compose run --rm --no-deps caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile`.
-7. Запустите `docker compose up -d --build`. Caddy автоматически получает и обновляет сертификат. Проверьте `docker compose ps`, `docker compose logs caddy`, `docker compose logs app` и `<BASE_URL>/health`.
+   Скопируйте вывод в `.env`. В `BASE_URL` нужен `https://`; в `TRUSTED_HOSTS` и `CADDY_DOMAIN` укажите только домен или IP, без схемы, пути и порта. IPv4 должен быть статическим публичным адресом именно этого VPS. Для локального шаблона оставьте значения `localhost` как есть.
 
-Не публикуйте порт 8000 и не добавляйте его в `ports` сервиса `app`.
+4. Сгенерируйте секрет и вставьте вывод в `APP_SECRET_KEY`:
+
+   ```bash
+   openssl rand -hex 32
+   ```
+
+5. Сгенерируйте hash пароля и путь администратора, затем вставьте оба результата в `.env`:
+
+   ```bash
+   uv run python -m app.cli hash-password
+   uv run python -m app.cli generate-admin-path
+   ```
+
+   Argon2id hash в `ADMIN_PASSWORD_HASH` обязательно заключите в одинарные кавычки, поскольку Docker Compose иначе интерпретирует символы `$`:
+
+   ```env
+   ADMIN_PASSWORD_HASH='$argon2id$v=19$m=65536,t=3,p=4$...'
+   ADMIN_PATH=/control-long-random-value
+   ```
+
+   Скрытый `ADMIN_PATH` снижает шум автоматического сканирования, но не заменяет пароль, rate limiting, CSRF и session security. Не публикуйте его вместе с приватными ссылками.
+
+## Локальный запуск
+
+Шаблон `.env.example` уже настроен для SQLite-файла в каталоге проекта.
+
+```bash
+uv sync
+uv run alembic upgrade head
+uv run uvicorn app.main:app --reload
+```
+
+Откройте `<BASE_URL><ADMIN_PATH>/login`.
+
+## Развёртывание в Docker на Linux VPS
+
+Docker Compose нужен для production: он запускает приложение с отдельным SQLite volume, Caddy с TLS и приватной сетью между Caddy и FastAPI. Не запускайте `uv run alembic` с production `DATABASE_URL=sqlite:////data/keyport.db`: путь `/data` существует только в контейнере и миграции выполняются автоматически при запуске `app`.
+
+1. Установите Docker Engine с Compose plugin и разрешите входящие TCP 80/443 в firewall.
+2. Если используете домен, создайте DNS `A`/`AAAA` запись на VPS и дождитесь распространения DNS. Для варианта с IP убедитесь, что он статический и публичный.
+3. После настройки `.env` проверьте Caddyfile и Compose:
+
+   ```bash
+   docker compose config --quiet
+   docker compose run --rm --no-deps caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+   ```
+
+4. Запустите сервис и проверьте его состояние:
+
+   ```bash
+   docker compose up -d --build
+   docker compose ps
+   docker compose logs caddy
+   docker compose logs app
+   ```
+
+   Затем откройте `<BASE_URL>/health`. Не публикуйте порт 8000 и не добавляйте его в `ports` сервиса `app`.
 
 ### Проверенный Caddyfile: домен или публичный IP
 
