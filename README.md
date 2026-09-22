@@ -95,7 +95,7 @@ uv run uvicorn app.main:app --reload
 
 ## Развёртывание в Docker на Linux VPS
 
-Docker Compose нужен для production: он запускает приложение с отдельным SQLite volume, Caddy с TLS и приватной сетью между Caddy и FastAPI. Не запускайте `uv run alembic` с production `DATABASE_URL=sqlite:////data/keyport.db`: путь `/data` существует только в контейнере и миграции выполняются автоматически при запуске `app`.
+Docker Compose нужен для production: он запускает приложение с отдельным SQLite volume, Caddy с TLS и приватной сетью между Caddy и FastAPI. Образы приложения и Caddy собираются из публичных ресурсов GHCR и GitHub Releases, поэтому вход в Docker Hub не требуется. Не запускайте `uv run alembic` с production `DATABASE_URL=sqlite:////data/keyport.db`: путь `/data` существует только в контейнере и миграции выполняются автоматически при запуске `app`.
 
 1. Установите Docker Engine с Compose plugin и разрешите входящие TCP 80/443 в firewall.
 2. Если используете домен, создайте DNS `A`/`AAAA` запись на VPS и дождитесь распространения DNS. Для варианта с IP убедитесь, что он статический и публичный.
@@ -103,7 +103,7 @@ Docker Compose нужен для production: он запускает прило�
 
    ```bash
    docker compose config --quiet
-   docker compose run --rm --no-deps caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+   docker compose run --rm --no-deps caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
    ```
 
 4. Запустите сервис и проверьте его состояние:
