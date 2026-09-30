@@ -1,8 +1,8 @@
 import secrets
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
-from fastapi.responses import RedirectResponse, Response
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from sqlalchemy.orm import Session
 
 from app.auth import require_admin
@@ -15,6 +15,7 @@ from app.repositories import AccessEntryRepository
 from app.routes.helpers import context, templates
 from app.services import AccessEntryService
 from app.services.access_entries import InvalidVpnKeyError, KeyInput
+from app.services.media import MAX_IMAGE_BYTES, save_image
 
 settings = get_settings()
 router = APIRouter(prefix=settings.admin_path, include_in_schema=False)
@@ -24,10 +25,17 @@ def admin_url(suffix: str = "") -> str:
     return f"{settings.admin_path}{suffix}"
 
 
-def key_inputs(names: list[str], values: list[str]) -> list[KeyInput]:
+def key_inputs(names: list[str], values: list[str], comments: list[str]) -> list[KeyInput]:
     if len(names) != len(values):
         raise InvalidVpnKeyError("Некорректный набор ключей")
-    return [KeyInput(name, value) for name, value in zip(names, values, strict=True)]
+    if not comments:
+        comments = [""] * len(names)
+    if len(comments) != len(names):
+        raise InvalidVpnKeyError("Некорректный набор комментариев")
+    return [
+        KeyInput(name, value, comment)
+        for name, value, comment in zip(names, values, comments, strict=True)
+    ]
 
 
 def redirect(path: str, message: str | None = None) -> RedirectResponse:
@@ -97,6 +105,29 @@ def admin_guard(request: Request) -> Response | None:
     return None
 
 
+@router.post("/media")
+async def upload_media(
+    request: Request,
+    image: UploadFile = File(...),
+    csrf_token: str = Form(...),
+    settings: Settings = Depends(get_settings),
+) -> Response:
+    if not require_admin(request):
+        raise HTTPException(status_code=401)
+    validate_csrf(request, csrf_token)
+    data = await image.read(MAX_IMAGE_BYTES + 1)
+    await image.close()
+    if len(data) > MAX_IMAGE_BYTES:
+        return JSONResponse(
+            {"error": "Размер изображения не должен превышать 5 МБ"}, status_code=413
+        )
+    try:
+        filename = save_image(data, settings.media_dir)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=415)
+    return JSONResponse({"url": f"/media/{filename}"}, headers={"Cache-Control": "no-store"})
+
+
 @router.get("")
 def dashboard(request: Request, db: Session = Depends(get_db)) -> Response:
     if guard := admin_guard(request):
@@ -132,7 +163,7 @@ def new_entry(request: Request) -> Response:
             request,
             title="Новый доступ",
             entry=None,
-            key_rows=[{"display_name": "Основной ключ", "vpn_key": ""}],
+            key_rows=[{"display_name": "Основной ключ", "vpn_key": "", "comment_html": ""}],
         ),
     )
 
@@ -144,6 +175,7 @@ def create_entry(
     description: str = Form(""),
     key_name: list[str] = Form(...),
     vpn_key: list[str] = Form(...),
+    key_comment: list[str] = Form([]),
     csrf_token: str = Form(...),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
@@ -153,7 +185,7 @@ def create_entry(
     validate_csrf(request, csrf_token)
     try:
         entry, token = AccessEntryService(AccessEntryRepository(db)).create(
-            display_name, description, key_inputs(key_name, vpn_key)
+            display_name, description, key_inputs(key_name, vpn_key, key_comment)
         )
     except InvalidVpnKeyError as exc:
         return templates.TemplateResponse(
@@ -169,8 +201,10 @@ def create_entry(
                     "description": description,
                 },
                 key_rows=[
-                    {"display_name": name, "vpn_key": value}
-                    for name, value in zip(key_name, vpn_key, strict=False)
+                    {"display_name": name, "vpn_key": value, "comment_html": comment}
+                    for name, value, comment in zip(
+                        key_name, vpn_key, key_comment or [""] * len(key_name), strict=False
+                    )
                 ],
             ),
             status_code=422,
@@ -219,6 +253,7 @@ def update_entry(
     description: str = Form(""),
     key_name: list[str] = Form(...),
     vpn_key: list[str] = Form(...),
+    key_comment: list[str] = Form([]),
     csrf_token: str = Form(...),
     db: Session = Depends(get_db),
 ) -> Response:
@@ -228,7 +263,7 @@ def update_entry(
     entry = get_entry_or_404(db, entry_id)
     try:
         AccessEntryService(AccessEntryRepository(db)).update(
-            entry, display_name, description, key_inputs(key_name, vpn_key)
+            entry, display_name, description, key_inputs(key_name, vpn_key, key_comment)
         )
     except InvalidVpnKeyError as exc:
         return templates.TemplateResponse(
@@ -239,9 +274,12 @@ def update_entry(
                 title="Редактирование",
                 entry=entry,
                 error=str(exc),
+                values={"display_name": display_name, "description": description},
                 key_rows=[
-                    {"display_name": name, "vpn_key": value}
-                    for name, value in zip(key_name, vpn_key, strict=False)
+                    {"display_name": name, "vpn_key": value, "comment_html": comment}
+                    for name, value, comment in zip(
+                        key_name, vpn_key, key_comment or [""] * len(key_name), strict=False
+                    )
                 ],
             ),
             status_code=422,

@@ -1,0 +1,20 @@
+{
+  "name": "keyport-editor-assets",
+  "private": true,
+  "scripts": {
+    "build": "esbuild ./frontend/editor.js --bundle --minify --format=iife --target=es2020 --outfile=app/static/js/editor.bundle.js"
+  },
+  "dependencies": {
+    "@tiptap/core": "3.31.3",
+    "@tiptap/starter-kit": "3.31.3",
+    "@tiptap/extension-image": "3.31.3",
+    "@tiptap/extension-file-handler": "3.31.3",
+    "@tiptap/extension-color": "3.31.3",
+    "@tiptap/extension-font-family": "3.31.3",
+    "@tiptap/extension-text-style": "3.31.3",
+    "@tiptap/extension-text-align": "3.31.3"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12"
+  }
+}

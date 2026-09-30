@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     admin_password_hash: str = ""
     admin_path: str = "/admin"
     database_url: str = "sqlite:///./keyport.db"
+    media_dir: str = "/data/uploads"
     base_url: str = "http://localhost:8000"
     environment: Literal["development", "test", "production"] = "development"
     trusted_hosts: str = "localhost,127.0.0.1,testserver"

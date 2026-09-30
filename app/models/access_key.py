@@ -20,6 +20,7 @@ class AccessKey(Base):
     )
     display_name: Mapped[str] = mapped_column(String(160))
     vpn_key: Mapped[str] = mapped_column(Text)
+    comment_html: Mapped[str | None] = mapped_column(Text, nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

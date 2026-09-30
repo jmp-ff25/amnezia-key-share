@@ -21,12 +21,14 @@ if (keyList && addKey) {
   addKey.addEventListener('click', () => {
     const template = document.getElementById('key-editor-template');
     keyList.appendChild(template.content.cloneNode(true));
+    document.dispatchEvent(new CustomEvent('keyport:key-added', { detail: { row: keyList.lastElementChild } }));
     keyList.lastElementChild.querySelector('input[name="key_name"]').focus();
     refreshKeyControls();
   });
   keyList.addEventListener('click', (event) => {
     const button = event.target.closest('.remove-key');
     if (button && keyList.children.length > 1) {
+      document.dispatchEvent(new CustomEvent('keyport:key-removing', { detail: { row: button.closest('.key-editor') } }));
       button.closest('.key-editor').remove();
       refreshKeyControls();
     }
@@ -47,7 +49,7 @@ if (publicKeyList) {
     });
   };
   const preferred = localStorage.getItem('keyport-key-layout');
-  setLayout(preferred === 'list' || preferred === 'grid' ? preferred : 'grid');
+  setLayout(preferred === 'list' || preferred === 'grid' ? preferred : publicKeyList.dataset.defaultLayout || 'grid');
   layoutButtons.forEach((button) => button.addEventListener('click', () => {
     localStorage.setItem('keyport-key-layout', button.dataset.layout);
     setLayout(button.dataset.layout);

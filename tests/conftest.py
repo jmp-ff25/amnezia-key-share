@@ -7,6 +7,7 @@ os.environ.update(
         "ADMIN_PATH": "/control-test",
         "ADMIN_PASSWORD_HASH": "$argon2id$v=19$m=65536,t=3,p=4$F96R/hhDS8ox+elpalLE8Q$rPymbemA+YOxdTgYsaz7BTDF81xvm1Ih5hjN8hy0Hn4",
         "DATABASE_URL": "sqlite:///./test-keyport.db",
+        "MEDIA_DIR": "./test-uploads",
         "BASE_URL": "http://testserver",
         "ENVIRONMENT": "test",
         "TRUSTED_HOSTS": "testserver,localhost,127.0.0.1",

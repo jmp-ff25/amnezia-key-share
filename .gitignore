@@ -8,5 +8,9 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .coverage
+node_modules/
+.uv-cache/
+test-uploads/
+.pytest_tmp*/
 htmlcov/
 dist/

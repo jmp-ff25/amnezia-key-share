@@ -1,17 +1,34 @@
 import re
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.db import get_db
 from app.repositories import AccessEntryRepository
 from app.routes.helpers import templates
 from app.services import AccessEntryService
+from app.services.media import IMAGE_MEDIA_TYPES, IMAGE_NAME_RE
 
 router = APIRouter(include_in_schema=False)
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{40,64}$")
 NO_STORE = {"Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow"}
+
+
+@router.get("/media/{filename}")
+def public_media(filename: str) -> Response:
+    if not IMAGE_NAME_RE.fullmatch(filename):
+        return Response(status_code=404, headers=NO_STORE)
+    path = Path(get_settings().media_dir) / filename
+    if not path.is_file():
+        return Response(status_code=404, headers=NO_STORE)
+    return FileResponse(
+        path,
+        media_type=IMAGE_MEDIA_TYPES[path.suffix],
+        headers={**NO_STORE, "X-Content-Type-Options": "nosniff"},
+    )
 
 
 @router.get("/access/{token}", response_class=HTMLResponse)

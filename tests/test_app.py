@@ -152,7 +152,7 @@ def test_vless_key_can_be_shared_with_hiddify(admin):
     url = re.search(r'value="(http://testserver/access/[^\"]+)"', response.text).group(1)
     public = admin.get(url)
     assert key in html.unescape(public.text)
-    assert "Откройте в Hiddify" in public.text
+    assert "Добавьте в Hiddify" in public.text
 
 
 def test_other_uri_scheme_is_rejected(admin):

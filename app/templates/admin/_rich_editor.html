@@ -1,0 +1,26 @@
+{% macro rich_editor(name, value, label, placeholder) %}
+<div class="rich-editor" data-rich-editor data-label="{{ label }}">
+  <div class="rich-toolbar" aria-label="Форматирование: {{ label }}"></div>
+  <textarea class="form-control rich-source" name="{{ name }}" rows="5" placeholder="{{ placeholder }}">{{ value|forceescape }}</textarea>
+  <div class="rich-surface" hidden></div>
+  <div class="rich-editor-feedback small" role="status" aria-live="polite"></div>
+</div>
+{% endmacro %}
+
+{% macro key_row(key) %}
+<section class="key-editor border rounded-3 p-3 bg-body-tertiary">
+  <div class="d-flex gap-2 align-items-start mb-3">
+    <div class="flex-grow-1">
+      <label class="form-label small fw-semibold">Название ключа</label>
+      <input class="form-control" name="key_name" maxlength="160" required value="{{ key.display_name }}" placeholder="Например: iPhone">
+    </div>
+    <button type="button" class="btn btn-light text-danger remove-key mt-4" aria-label="Удалить ключ"><i class="bi bi-trash"></i></button>
+  </div>
+  <label class="form-label small fw-semibold">Ключ Amnezia VPN или VLESS / REALITY</label>
+  <textarea class="form-control font-monospace" name="vpn_key" rows="3" required spellcheck="false" placeholder="vpn://... или vless://...">{{ key.vpn_key }}</textarea>
+  <div class="mt-3">
+    <label class="form-label small fw-semibold">Инструкция к этому ключу <span class="text-secondary fw-normal">(необязательно)</span></label>
+    {{ rich_editor("key_comment", key.comment_html or "", "Инструкция к ключу", "Как установить приложение и добавить именно этот ключ") }}
+  </div>
+</section>
+{% endmacro %}

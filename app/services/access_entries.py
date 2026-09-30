@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 
 from app.models import AccessEntry, AccessKey
 from app.repositories import AccessEntryRepository
+from app.services.rich_text import clean_rich_text
 
 
 class InvalidVpnKeyError(ValueError):
@@ -15,6 +16,7 @@ class InvalidVpnKeyError(ValueError):
 class KeyInput:
     display_name: str
     vpn_key: str
+    comment_html: str = ""
 
 
 class AccessEntryService:
@@ -50,10 +52,15 @@ class AccessEntryService:
             name = key.display_name.strip()
             if not name:
                 raise InvalidVpnKeyError(f"Укажите название для ключа №{index + 1}")
+            try:
+                comment_html = clean_rich_text(key.comment_html)
+            except ValueError as exc:
+                raise InvalidVpnKeyError(f"Комментарий к ключу №{index + 1}: {exc}") from exc
             result.append(
                 AccessKey(
                     display_name=name[:160],
                     vpn_key=self.validate_key(key.vpn_key),
+                    comment_html=comment_html or None,
                     sort_order=index,
                 )
             )
@@ -62,10 +69,15 @@ class AccessEntryService:
     def create(
         self, display_name: str, description: str, keys: list[KeyInput]
     ) -> tuple[AccessEntry, str]:
+        try:
+            description_html = clean_rich_text(description)
+        except ValueError as exc:
+            raise InvalidVpnKeyError(f"Описание группы: {exc}") from exc
         token = self.generate_token()
         entry = AccessEntry(
             display_name=display_name.strip(),
-            description=description.strip() or None,
+            description=description_html or None,
+            description_format="html",
             public_token_hash=self.token_hash(token),
             public_token=token,
             keys=self.validate_keys(keys),
@@ -75,9 +87,15 @@ class AccessEntryService:
     def update(
         self, entry: AccessEntry, display_name: str, description: str, keys: list[KeyInput]
     ) -> AccessEntry:
+        try:
+            description_html = clean_rich_text(description)
+        except ValueError as exc:
+            raise InvalidVpnKeyError(f"Описание группы: {exc}") from exc
+        validated_keys = self.validate_keys(keys)
         entry.display_name = display_name.strip()
-        entry.description = description.strip() or None
-        entry.keys = self.validate_keys(keys)
+        entry.description = description_html or None
+        entry.description_format = "html"
+        entry.keys = validated_keys
         entry.updated_at = datetime.now(UTC)
         return self.repository.save(entry)
 

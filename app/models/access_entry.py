@@ -17,6 +17,9 @@ class AccessEntry(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     display_name: Mapped[str] = mapped_column(String(160), index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    description_format: Mapped[str] = mapped_column(
+        String(8), default="html", server_default="plain"
+    )
     public_token_hash: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
     public_token: Mapped[str | None] = mapped_column(String(64), unique=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
