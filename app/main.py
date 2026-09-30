@@ -61,7 +61,9 @@ class SensitiveDataFilter(logging.Filter):
         if record.args:
             record.args = (
                 tuple(
-                    "[redacted]" if isinstance(value, str) and value.startswith("vpn://") else value
+                    "[redacted]"
+                    if isinstance(value, str) and value.startswith(("vpn://", "vless://"))
+                    else value
                     for value in record.args
                 )
                 if isinstance(record.args, tuple)

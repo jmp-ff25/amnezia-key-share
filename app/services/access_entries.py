@@ -32,8 +32,12 @@ class AccessEntryService:
     @staticmethod
     def validate_key(vpn_key: str) -> str:
         clean = vpn_key.strip()
-        if not clean.startswith("vpn://") or any(char.isspace() for char in clean):
-            raise InvalidVpnKeyError("Ключ должен быть корректным URI, начинающимся с vpn://")
+        if not clean.startswith(("vpn://", "vless://")) or any(
+            char.isspace() for char in clean
+        ):
+            raise InvalidVpnKeyError(
+                "Ключ должен начинаться с vpn:// или vless:// и не содержать пробелов"
+            )
         return clean
 
     def validate_keys(self, keys: list[KeyInput]) -> list[AccessKey]:

@@ -1,3 +1,4 @@
+import html
 import logging
 import re
 
@@ -131,3 +132,38 @@ def test_named_key_group(admin):
     worker = admin.get("/service-worker.js")
     assert worker.status_code == 200 and "does not cache" in worker.text
     assert worker.headers["cache-control"] == "no-store"
+
+
+def test_vless_key_can_be_shared_with_hiddify(admin):
+    key = (
+        "vless://00000000-0000-4000-8000-000000000001@example.org:8443"
+        "?encryption=none&security=reality&type=tcp#Mac"
+    )
+    response = admin.post(
+        "/control-test/entries/new",
+        data={
+            "display_name": "Mac",
+            "key_name": "Mac",
+            "vpn_key": key,
+            "csrf_token": csrf(admin, "/control-test/entries/new"),
+        },
+    )
+    assert response.status_code == 200
+    url = re.search(r'value="(http://testserver/access/[^\"]+)"', response.text).group(1)
+    public = admin.get(url)
+    assert key in html.unescape(public.text)
+    assert "Откройте в Hiddify" in public.text
+
+
+def test_other_uri_scheme_is_rejected(admin):
+    response = admin.post(
+        "/control-test/entries/new",
+        data={
+            "display_name": "Invalid",
+            "key_name": "Invalid",
+            "vpn_key": "https://example.org",
+            "csrf_token": csrf(admin, "/control-test/entries/new"),
+        },
+    )
+    assert response.status_code == 422
+    assert "vpn:// или vless://" in response.text
