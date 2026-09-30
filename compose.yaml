@@ -15,7 +15,9 @@ services:
       start_period: 15s
     networks: [internal]
   caddy:
-    image: caddy:2.11.3-alpine
+    build:
+      context: .
+      dockerfile: Caddy.Dockerfile
     depends_on:
       app:
         condition: service_healthy
